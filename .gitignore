@@ -5,3 +5,6 @@
 *.xlsx
 *.doc
 *.html
+data/*
+ported over from old directory/*
+.Rproj.user

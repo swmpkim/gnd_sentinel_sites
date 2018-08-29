@@ -1,0 +1,207 @@
+---
+date: "August 29, 2018"
+output: 
+    html_document:
+        toc: true
+        toc_float: true
+        toc_depth: 4
+        df_print: paged
+        code_folding: hide
+        
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# GND Sentinel Site Analyses {.tabset}  
+
+
+Setup  
+-------------------------------------------------------------------------------
+
+### General file setup functions
+
+#### Load libraries and source function file 
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+library(knitr)
+library(broom)
+source('000-Functions.R')
+```
+
+#### Load data  
+
+a.  csv files: 
+    +  *markers_UPDATED* - most recent, correct marker horizon data  
+    +  *sets_wide_UPDATED* - most recent, correct pin data    
+    +  *NAVD88* - elevations of SET head adapters at each site; generated in 2012? (unsure)  
+
+b.  xlsx: last feldspar application dates (may not need this one?)  
+
+```{r}
+markers_raw <- read.csv('../data/markers_UPDATED.csv')
+sets_raw <- read.csv('../data/sets_wide_UPDATED.csv')
+navd88_setheads <- read.csv('../data/NAVD88.csv')
+```
+
+#### Format the data frames - deal with dates; attach site names 
+
+a.  markers:  
+
+```{r}
+markers <- markers_raw %>%
+    mutate(date = lubridate::mdy(date),
+           app_date = lubridate::mdy(ref_date)) %>%
+    gather(key = ncore, value = value, A, B, C, D) %>%
+    select(SET, MHplot, ncore, date, app_date, value) %>%
+    arrange(SET, date, MHplot, ncore) %>%
+    attach_site_names()
+```
+  
+  
+b.  pins:    
+
+```{r}
+pins <- sets_raw %>%
+    mutate(date = lubridate::mdy(date)) %>%
+    gather(key = npin, value = value, -SET, -date, -arm) %>%
+    arrange(SET, date, arm, npin) %>%
+    attach_site_names()
+```
+
+
+#### General housekeeping:  
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+Calculated Rates  {.active}  
+------------------------------------------------------------------------------
+
+### Number Crunching and output  
+
+**NOTE: I've rounded everything to 3 digits in the output tables**  
+
+This can be changed if needed. 
+
+Output data frames will be:  
+
+  a.  point measurements of rate (SET: by pin; MH: by MHplot)  
+  b.  average rate per SET plot (SET: avg of 36 pin rates; MH: avg of 3 plot rates)  
+  c.  average per site (for both, avg of 3 SET plot rates)  <-- this will be output from the ANOVA/Tukey tests though, so may not have to go in a separate table?
+
+### Elevation Change Rates (SETs)  
+
+***
+
+#### By pin
+
+**Linear regression for each pin.** Keeping errors and confidence intervals in here just so we can describe the linear regression model should it ever be necessary. But really we'll only be working with *rate_mm.yr* from here on out.    
+```{r, rows.print = 9}
+models <- pins %>%
+    group_by(SET, arm, npin) %>%
+    do(mod = lm(value ~ date, data = .))  
+
+modelcoef <- tidy(models, mod, conf.int=TRUE, conf.level=0.95) # this gives the intercept, slope, and p values, among others; conf.int=TRUE, conf.level=0.95 gives the 95% confidence interval
+
+# get rid of intercept row,
+# calculate mm/yr for all the terms,
+# round mm/yr to 3 digits,
+# get rid of the mm/day stuff
+rates_elev_pins <- modelcoef %>%
+    filter(term == "date") %>%
+    mutate(rate_mm.yr = round(estimate*365.25, 3),
+           se_mm.yr = round(std.error*365.25, 3),
+           CIlow_mm.yr = round(conf.low*365.25, 3),
+           CIhigh_mm.yr = round(conf.high*365.25, 3),
+           p.value = round(p.value, 4),
+           statistic = round(statistic, 3)) %>%
+    select(SET, arm, npin, rate_mm.yr, se_mm.yr, CIlow_mm.yr, CIhigh_mm.yr, statistic, p.value)
+
+modelsummary <- glance(models, mod) # this gives r^2 and adjusted r^2, and p values, among others
+
+rates_elev_pins
+
+```
+
+
+***
+    
+#### By SET  
+
+Simple average of the 36 pins per SET.  
+
+```{r}
+rates_elev_set <- rates_elev_pins %>%
+    group_by(SET) %>%
+    summarize(rate = mean(rate_mm.yr, na.rm = TRUE),
+              sd_rate = sd(rate_mm.yr, na.rm = TRUE)) %>%
+    ungroup() %>%
+    attach_site_names()
+
+kable(rates_elev_set, 
+      align = 'c',
+      digits = 3,
+      caption = "Mean and standard deviation of elevation rate change in mm per year by SET")
+```
+
+***
+
+#### By site  
+
+Average of 3 SETs per site  
+
+```{r}
+rates_elev_site <- rates_elev_set %>%
+    group_by(site) %>%
+    rename(rates = rate) %>%
+    summarize(rate = mean(rates, na.rm = TRUE),
+              sd_rate = sd(rates, na.rm = TRUE)) %>%
+    ungroup() 
+
+kable(rates_elev_site, 
+      align = 'c', 
+      digits = 3,
+      caption = "Mean and standard deviation of elevation rate change in mm per year by site")
+```
+
+***
+***
+
+### Accretion (Marker Horizons)  
+
+  
+
+
+    
+    
+Statistical Analyses    
+-------------------------------------------------------------------------------
+
+### Statistical Analyses  
+    
+1.  Compare change between sites - ANOVA and Tukey  
+
+
+
+
+Graphics  
+-------------------------------------------------------------------------------
+
+### Graphics  
+
+1.	SETs by SET plot and Site (include SLR line)
+2.	MH by SET plot and Site  
+3.	SETs and MH together by plot (include SLR line)
+4.	SETs and MH together by Site. (include SLR line) 
+5.  NAVD88 SLR graphic  
+    +  make sure the slope for each site is the same as the average of the three SET plots' slopes, or the graph won't match the tables/ANOVA outputs.  
+    +  OR construct the line from those statistical outputs, rather than geom_smooth. Probably safer. Only rates in those though, so intercept would be.... average of NAVD88 elevations of three SETS at a site at the beginning of the study?  
