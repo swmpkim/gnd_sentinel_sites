@@ -11,6 +11,8 @@ output:
   pdf_document:
     toc: yes
     toc_depth: '4'
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -30,10 +32,13 @@ Setup
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(tibble)
 library(lubridate)
 library(knitr)
 library(broom)
-source('000-Functions.R')
+library(agricolae)
+library(here)
+source(here('R', '000-Functions.R'))
 ```
 
 #### Load data  
@@ -46,9 +51,9 @@ a.  csv files:
 b.  xlsx: last feldspar application dates (may not need this one?)  
 
 ```{r}
-markers_raw <- read.csv('../data/markers_UPDATED.csv')
-sets_raw <- read.csv('../data/sets_wide_UPDATED.csv')
-navd88_setheads <- read.csv('../data/NAVD88.csv')
+markers_raw <- read.csv(here('data', 'markers_UPDATED.csv'))
+sets_raw <- read.csv(here('data', 'sets_wide_UPDATED.csv'))
+navd88_setheads <- read.csv(here('data', 'NAVD88.csv'))
 ```
 
 #### Format the data frames - deal with dates; attach site names 
@@ -135,7 +140,7 @@ rates_elev_pins <- modelcoef %>%
 
 modelsummary <- glance(models, mod) # this gives r^2 and adjusted r^2, and p values, among others
 
-rates_elev_pins
+# rates_elev_pins
 
 ```
 
@@ -191,6 +196,9 @@ kable(rates_elev_site,
 
 ### Accretion (Marker Horizons)  
 
+__JURO-HIGH-1 EXCLUDED FROM ALL MH ANALYSES__  - there was only ~1 readable core per year in 2 of the 3 MH plots, and the numbers were crazy.
+
+
 __change__ is mm    
 __rate__ is mm/year (accounts for leap years)  
 CIs calculated as  $\bar{x} \pm 1.96(st.err)$  
@@ -200,12 +208,13 @@ Make a new data frame that only contains data on MHs laid after 3/2/2012.
 ```{r}
 markers_trimmed <- markers %>%
     group_by(site, SET, MHplot) %>%
-    filter(app_date <= "2012-03-02")
+    filter(app_date <= "2012-03-02",
+           SET != "PANNE-1")
 ```
 
-#### By MHPlot, by date  
+#### By MHPlot, by date - incremental  
 
-Calculate incremental change for each MHplot on each date: first average by date, then subtract prior reading and calculate a rate.  
+Calculate incremental change __between each measurement__ for each MHplot on each date: first average by date, then subtract prior reading and calculate a rate.  
 
 ```{r}
 marker_rates_inc <- markers_trimmed %>%
@@ -220,7 +229,7 @@ marker_rates_inc <- markers_trimmed %>%
 
 ***  
 
-#### By MHPlot, overall  
+#### By MHPlot, overall - incremental  
 
 Calculate overall average incremental change for each MHplot, across all dates.  
 
@@ -237,12 +246,12 @@ marker_rates_inc_plotsumm <- marker_rates_inc %>%
               ci_95_inc_rate = paste0(round((mean_inc_rate - 1.96*se_inc_rate), 3), ", ", round((mean_inc_rate + 1.96*se_inc_rate), 3))) %>%
     ungroup()
 
-marker_rates_inc_plotsumm
+# marker_rates_inc_plotsumm
 ```
 
 *** 
 
-#### By SET  
+#### By SET - incremental  
 
 ```{r}
 marker_rates_inc_SETsumm <- marker_rates_inc_plotsumm %>%
@@ -266,7 +275,7 @@ kable(marker_rates_inc_SETsumm,
 
 ***
 
-#### By Site    
+#### By Site - incremental    
 
 ```{r}
 marker_rates_inc_sitesumm <- marker_rates_inc_SETsumm %>%
@@ -288,15 +297,536 @@ kable(marker_rates_inc_sitesumm,
       caption = 'Incremental Accretion Change by Site')
 ```
 
-    
-Statistical Analyses    
+***
+***
+
+#### By MHPlot - annualized  
+
+Calculate incremental change __in yearly chunks; fall to fall,__ for each MHplot:  
+
++  marker horizon data grouped by year, from October of one year through December of the next, to catch all possible fall readings  
++  run linear model by MHplot  
++  average MHplots across years (similar to finding rate of each pin, then taking that average for the SET - find the rate of each MHplot, and averate those up to SET)  
+
+
+
+```{r}
+## 2012 
+
+marker_rates_2012 <- markers_trimmed %>%
+    ungroup() %>%
+    filter(date >= '2011-10-01',
+           date <= '2012-12-31') %>%
+    group_by(site, SET, MHplot, date) %>%
+    summarize(plotmean = mean(value, na.rm = TRUE)) %>%
+    ungroup()
+
+models <- marker_rates_2012 %>%
+    group_by(site, SET, MHplot) %>%
+    filter(!is.na(plotmean)) %>%
+    do(mod = lm(plotmean ~ date, data = .))  
+
+modelcoef <- tidy(models, mod, conf.int=TRUE, conf.level=0.95) 
+
+rates_mh_annual_2012 <- modelcoef %>%
+    filter(term == "date") %>%
+    mutate(rate_mm.yr = round(estimate*365.25, 3),
+           se_mm.yr = round(std.error*365.25, 3),
+           CIlow_mm.yr = round(conf.low*365.25, 3),
+           CIhigh_mm.yr = round(conf.high*365.25, 3),
+           p.value = round(p.value, 4),
+           statistic = round(statistic, 3),
+           year = '2012') %>%
+    select(year, site, SET, MHplot, rate_mm.yr, se_mm.yr, CIlow_mm.yr, CIhigh_mm.yr)
+
+
+## 2013
+marker_rates_2013 <- markers_trimmed %>%
+    ungroup() %>%
+    filter(date >= '2012-10-01',
+           date <= '2013-12-31') %>%
+    group_by(site, SET, MHplot, date) %>%
+    summarize(plotmean = mean(value, na.rm = TRUE)) %>%
+    ungroup()
+
+models <- marker_rates_2013 %>%
+    group_by(site, SET, MHplot) %>%
+    filter(!is.na(plotmean)) %>%
+    do(mod = lm(plotmean ~ date, data = .))  
+
+modelcoef <- tidy(models, mod, conf.int=TRUE, conf.level=0.95) 
+
+rates_mh_annual_2013 <- modelcoef %>%
+    filter(term == "date") %>%
+    mutate(rate_mm.yr = round(estimate*365.25, 3),
+           se_mm.yr = round(std.error*365.25, 3),
+           CIlow_mm.yr = round(conf.low*365.25, 3),
+           CIhigh_mm.yr = round(conf.high*365.25, 3),
+           p.value = round(p.value, 4),
+           statistic = round(statistic, 3),
+           year = '2013') %>%
+    select(year, site, SET, MHplot, rate_mm.yr, se_mm.yr, CIlow_mm.yr, CIhigh_mm.yr)
+
+
+## 2014  
+
+marker_rates_2014 <- markers_trimmed %>%
+    ungroup() %>%
+    filter(date >= '2013-10-01',
+           date <= '2014-12-31') %>%
+    group_by(site, SET, MHplot, date) %>%
+    summarize(plotmean = mean(value, na.rm = TRUE)) %>%
+    ungroup()
+
+models <- marker_rates_2014 %>%
+    group_by(site, SET, MHplot) %>%
+    filter(!is.na(plotmean)) %>%
+    do(mod = lm(plotmean ~ date, data = .))  
+
+modelcoef <- tidy(models, mod, conf.int=TRUE, conf.level=0.95) 
+
+rates_mh_annual_2014 <- modelcoef %>%
+    filter(term == "date") %>%
+    mutate(rate_mm.yr = round(estimate*365.25, 3),
+           se_mm.yr = round(std.error*365.25, 3),
+           CIlow_mm.yr = round(conf.low*365.25, 3),
+           CIhigh_mm.yr = round(conf.high*365.25, 3),
+           p.value = round(p.value, 4),
+           statistic = round(statistic, 3),
+           year = '2014') %>%
+    select(year, site, SET, MHplot, rate_mm.yr, se_mm.yr, CIlow_mm.yr, CIhigh_mm.yr)
+
+
+
+## 2015
+marker_rates_2015 <- markers_trimmed %>%
+    ungroup() %>%
+    filter(date >= '2014-10-01',
+           date <= '2015-12-31') %>%
+    group_by(site, SET, MHplot, date) %>%
+    summarize(plotmean = mean(value, na.rm = TRUE)) %>%
+    ungroup()
+
+models <- marker_rates_2015 %>%
+    group_by(site, SET, MHplot) %>%
+    filter(!is.na(plotmean)) %>%
+    do(mod = lm(plotmean ~ date, data = .))  
+
+modelcoef <- tidy(models, mod, conf.int=TRUE, conf.level=0.95) 
+
+rates_mh_annual_2015 <- modelcoef %>%
+    filter(term == "date") %>%
+    mutate(rate_mm.yr = round(estimate*365.25, 3),
+           se_mm.yr = round(std.error*365.25, 3),
+           CIlow_mm.yr = round(conf.low*365.25, 3),
+           CIhigh_mm.yr = round(conf.high*365.25, 3),
+           p.value = round(p.value, 4),
+           statistic = round(statistic, 3),
+           year = '2015') %>%
+    select(year, site, SET, MHplot, rate_mm.yr, se_mm.yr, CIlow_mm.yr, CIhigh_mm.yr)
+
+
+## 2016
+marker_rates_2016 <- markers_trimmed %>%
+    ungroup() %>%
+    filter(date >= '2015-10-01',
+           date <= '2016-12-31') %>%
+    group_by(site, SET, MHplot, date) %>%
+    summarize(plotmean = mean(value, na.rm = TRUE))
+
+models <- marker_rates_2016 %>%
+    group_by(site, SET, MHplot) %>%
+    filter(!is.na(plotmean)) %>%
+    do(mod = lm(plotmean ~ date, data = .))  
+
+modelcoef <- tidy(models, mod, conf.int=TRUE, conf.level=0.95) 
+
+rates_mh_annual_2016 <- modelcoef %>%
+    filter(term == "date") %>%
+    mutate(rate_mm.yr = round(estimate*365.25, 3),
+           se_mm.yr = round(std.error*365.25, 3),
+           CIlow_mm.yr = round(conf.low*365.25, 3),
+           CIhigh_mm.yr = round(conf.high*365.25, 3),
+           p.value = round(p.value, 4),
+           statistic = round(statistic, 3),
+           year = '2016') %>%
+    select(year, site, SET, MHplot, rate_mm.yr, se_mm.yr, CIlow_mm.yr, CIhigh_mm.yr)
+
+# Bind them all together and get rid of the individual files   
+
+
+rates_mh_annual_all <- bind_rows(rates_mh_annual_2012, rates_mh_annual_2013, rates_mh_annual_2014, rates_mh_annual_2015, rates_mh_annual_2016)
+
+rm(marker_rates_2012, marker_rates_2013, marker_rates_2014, marker_rates_2015, marker_rates_2016, rates_mh_annual_2012, rates_mh_annual_2013, rates_mh_annual_2014, rates_mh_annual_2015, rates_mh_annual_2016)
+```
+
+
+View annualized rates by MH plot  
+
+```{r, rows.print = 9}
+rates_mh_annual_wide <- rates_mh_annual_all %>%
+    select(year, site, SET, MHplot, rate_mm.yr) %>%
+    spread(key = year, value = rate_mm.yr)
+# this should introduce some NAs when values weren't calculated for a year
+
+# rates_mh_annual_wide
+```
+
+
+#### By SET - annualized, by year  
+
+View annual rates by SET - first got annual averages by MHplot, then averaged those three numbers together 
+
+```{r}
+# rates_mh_annual_setsumm <- rates_mh_annual_wide %>%
+#     gather(key = year, value = plotmean, -site, -SET, -MHplot) %>%
+#     group_by(site, SET, year) %>%
+#     summarize(setmean = mean(plotmean, na.rm = TRUE)) %>%
+#     spread(key = year, value = setmean)
+# kable(rates_mh_annual_setsumm, align = 'c', digits = 3, caption = "Mean annual (fall to fall) accretion rates, mm/yr, by SET")
+```
+
+
+View overall mean rates by MH plot  
+
+```{r}
+rates_mh_annual_plotsumm <- rates_mh_annual_wide %>%
+    gather(key = year, value = value, -site, -SET, -MHplot) %>%
+    group_by(site, SET, MHplot) %>%
+    summarize(plotmean = mean(value, na.rm = TRUE))
+# kable(rates_mh_annual_plotsumm, align = 'c', digits = 3)
+```
+
+#### By SET - annualized, overall mean of MHplot rates  
+
+```{r}
+rates_mh_overall_setsumm <- rates_mh_annual_plotsumm %>%
+    ungroup() %>%
+    group_by(site, SET) %>%
+    summarize(overall_mean = mean(plotmean, na.rm = TRUE))
+kable(rates_mh_overall_setsumm, align = 'c', digits = 3, caption = "average annualized rate of accretion by SET")
+```
+
+
+ 
+
+
+Comparisons between sites    
 -------------------------------------------------------------------------------
-
-### Statistical Analyses  
     
-1.  Compare change between sites - ANOVA and Tukey  
+Compare change between sites - ANOVA and Tukey  
+
+#### Pin Comparisons between sites  
+
+##### ANOVA  
+
+```{r}
+fit <- aov(rate ~ site, data = rates_elev_set)
+anova(fit)
+```
+
+Significant differences between sites; p < 0.001  
+
+##### Tukey  
+
+```{r}
+# from library(agricolae)
+hsd <- HSD.test(fit, 'site') # storing it
+hsdgroups <- hsd$groups 
+kable(hsdgroups, caption = "Tukey's HSD on elevation change rates", digits=2, align='c')
+
+# plot 0.05 alpha groupings
+plot(hsd, 
+     main = "Elevation change rate groupings \nTukey HSD alpha = 0.05",
+     xlab = "Site",
+     ylab = "long-term change (mm/yr)")
+box()
+```
+
+Plot of Tukey output, ordered by elevation gradient:  
+
+```{r}
+### THIS SHOULD WORK WITH EITHER PINS OR MHs
+# whichever has been used in the model
+
+# make data frames with all relevant data
+# hsd$means shows min, max, and quartiles
+# hsd$groups gives the group letters
+hsdresults <- rownames_to_column(hsd$means, 'site')
+names(hsdresults)[2] <- 'sitemean'
+
+hsdresults2 <- rownames_to_column(hsd$groups, 'site')
+names(hsdresults2)[2] <- 'sitemean'
+
+# merge the data frames
+hsdresults3 <- merge(hsdresults, hsdresults2, by=c('site', 'sitemean'))
+hsdresults4 <- mutate(hsdresults3, site=factor(site, levels=c("CLMAJ", "JURO_High", "JURO_Mid", "JURO_Low", "SPAL"), ordered=TRUE))
 
 
+# plot the tukey results; factor order puts highest elevation first; 
+# decreasing elevation from left to right
+hsdplot <- ggplot(hsdresults4) +
+    geom_point(aes(x=site, y=sitemean, col=groups), show.legend=FALSE, size=3) +
+    geom_linerange(aes(x=site, ymin=Min, ymax=Max, col=groups), size=1, show.legend=FALSE) +
+    ggtitle("Tukey groupings - elevation change rates", subtitle = "point is mean change; lines extend to min and max by site") +
+    labs(x="Site", y="rate of change (mm/yr)") +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+
+# annotate the groupings inside the plot
+# this puts groups at the top without coordinate-flipping
+hsdplot + geom_text(aes(x=site, y=max(hsdresults4$Max), label=groups), nudge_y=0.3)
+```
+
+
+```{r}
+# flip the coordinates; scale_x_discrete command makes sure the elevations come out correctly - 
+# highest at top, lowest at bottom
+# get the group annotations to the left, by the site labels
+pinhsdplot <- hsdplot + scale_x_discrete(limits=rev(levels(hsdresults4$site))) +
+    geom_text(aes(x=site, y=min(hsdresults4$Min), label=groups), nudge_y=-0.2) +
+    coord_flip()
+
+print(pinhsdplot)
+```
+
+
+***
+***
+
+#### Incremental Accretion Comparisons between sites  
+
+##### ANOVA  
+
+```{r}
+fit <- aov(mean_inc_rate ~ site, data = marker_rates_inc_SETsumm)
+anova(fit)
+```
+
+No sig diff between sites  
+
+##### Tukey - just for the graph  
+
+```{r}
+# from library(agricolae)
+hsd <- HSD.test(fit, 'site') # storing it
+hsdgroups <- hsd$groups 
+kable(hsdgroups, caption = "Tukey's HSD on incremental accretion rates", digits=2, align='c')
+
+# plot 0.05 alpha groupings
+plot(hsd, 
+     main = "Accretion rate groupings \nTukey HSD alpha = 0.05",
+     xlab = "Site",
+     ylab = "long-term change (mm/yr)")
+box()
+```
+
+Plot of Tukey output, ordered by elevation gradient:  
+
+```{r}
+### THIS SHOULD WORK WITH EITHER PINS OR MHs
+# whichever has been used in the model
+
+# make data frames with all relevant data
+# hsd$means shows min, max, and quartiles
+# hsd$groups gives the group letters
+hsdresults <- rownames_to_column(hsd$means, 'site')
+names(hsdresults)[2] <- 'sitemean'
+
+hsdresults2 <- rownames_to_column(hsd$groups, 'site')
+names(hsdresults2)[2] <- 'sitemean'
+
+# merge the data frames
+hsdresults3 <- merge(hsdresults, hsdresults2, by=c('site', 'sitemean'))
+hsdresults4 <- mutate(hsdresults3, site=factor(site, levels=c("CLMAJ", "JURO_High", "JURO_Mid", "JURO_Low", "SPAL"), ordered=TRUE))
+
+
+# plot the tukey results; factor order puts highest elevation first; 
+# decreasing elevation from left to right
+hsdplot <- ggplot(hsdresults4) +
+    geom_point(aes(x=site, y=sitemean, col=groups), show.legend=FALSE, size=3) +
+    geom_linerange(aes(x=site, ymin=Min, ymax=Max, col=groups), size=1, show.legend=FALSE) +
+    ggtitle("Tukey groupings - accretion rates", subtitle = "point is mean change; lines extend to min and max by site") +
+    labs(x="Site", y="rate of change (mm/yr)") +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+
+# annotate the groupings inside the plot
+# this puts groups at the top without coordinate-flipping
+hsdplot + geom_text(aes(x=site, y=max(hsdresults4$Max), label=groups), nudge_y=0.3)
+```
+
+
+```{r}
+# flip the coordinates; scale_x_discrete command makes sure the elevations come out correctly - 
+# highest at top, lowest at bottom
+# get the group annotations to the left, by the site labels
+pinhsdplot <- hsdplot + scale_x_discrete(limits=rev(levels(hsdresults4$site))) +
+    geom_text(aes(x=site, y=min(hsdresults4$Min), label=groups), nudge_y=-0.2) +
+    coord_flip()
+
+print(pinhsdplot)
+```
+
+***
+***
+
+
+***
+***
+***
+***
+
+### Annualized Accretion Rate Comparisons  
+
+##### ANOVA  
+
+```{r}
+fit <- aov(overall_mean ~ site, data = rates_mh_overall_setsumm)
+anova(fit)
+```
+
+ 
+
+##### Tukey  
+
+```{r}
+# from library(agricolae)
+hsd <- HSD.test(fit, 'site') # storing it
+hsdgroups <- hsd$groups 
+kable(hsdgroups, caption = "Tukey's HSD on incremental accretion rates", digits=2, align='c')
+
+# plot 0.05 alpha groupings
+plot(hsd, 
+     main = "Accretion rate groupings \nTukey HSD alpha = 0.05",
+     xlab = "Site",
+     ylab = "long-term change (mm/yr)")
+box()
+```
+
+Plot of Tukey output, ordered by elevation gradient:  
+
+```{r}
+### THIS SHOULD WORK WITH EITHER PINS OR MHs
+# whichever has been used in the model
+
+# make data frames with all relevant data
+# hsd$means shows min, max, and quartiles
+# hsd$groups gives the group letters
+hsdresults <- rownames_to_column(hsd$means, 'site')
+names(hsdresults)[2] <- 'sitemean'
+
+hsdresults2 <- rownames_to_column(hsd$groups, 'site')
+names(hsdresults2)[2] <- 'sitemean'
+
+# merge the data frames
+hsdresults3 <- merge(hsdresults, hsdresults2, by=c('site', 'sitemean'))
+hsdresults4 <- mutate(hsdresults3, site=factor(site, levels=c("CLMAJ", "JURO_High", "JURO_Mid", "JURO_Low", "SPAL"), ordered=TRUE))
+
+
+# plot the tukey results; factor order puts highest elevation first; 
+# decreasing elevation from left to right
+hsdplot <- ggplot(hsdresults4) +
+    geom_point(aes(x=site, y=sitemean, col=groups), show.legend=FALSE, size=3) +
+    geom_linerange(aes(x=site, ymin=Min, ymax=Max, col=groups), size=1, show.legend=FALSE) +
+    ggtitle("Tukey groupings - accretion rates", subtitle = "point is mean change; lines extend to min and max by site") +
+    labs(x="Site", y="rate of change (mm/yr)") +
+    theme_bw() +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+
+# annotate the groupings inside the plot
+# this puts groups at the top without coordinate-flipping
+hsdplot + geom_text(aes(x=site, y=max(hsdresults4$Max), label=groups), nudge_y=0.3)
+```
+
+
+```{r}
+# flip the coordinates; scale_x_discrete command makes sure the elevations come out correctly - 
+# highest at top, lowest at bottom
+# get the group annotations to the left, by the site labels
+pinhsdplot <- hsdplot + scale_x_discrete(limits=rev(levels(hsdresults4$site))) +
+    geom_text(aes(x=site, y=min(hsdresults4$Min), label=groups), nudge_y=-0.2) +
+    coord_flip()
+
+print(pinhsdplot)
+```
+
+***
+***
+***
+***
+
+## Comparisons to Sea Level Rise  
+
+#### Pin Change Rates  
+
+__t-tests comparing each site's rate of elevation change to our local rate of SLR (3.5 mm/yr).__  
+
+__H0:__ rate >= 3.5  
+__Ha:__ rate < 3.5  
+
+Keep in mind: n = 3 for each site. There has been no adjustment for multiple comparisons.
+
+```{r}
+models <- rates_elev_set %>%
+    group_by(site) %>%  
+    do(mod = t.test(.$rate, mu=3.5, alternative="less"))
+
+modelcoef <- tidy(models, mod, conf.int=FALSE) %>%
+    select(site, estimate, statistic, p.value, method, alternative)
+
+kable(modelcoef, digits = c(4,2,3,4,4,4), align='c', caption = "t-test results for elevation change rates by site, as compared to local SLR rate of 3.5 mm/yr")
+```
+
+
+#### Incremental Accretion Rates  
+
+__t-tests comparing each site's rate of accretion to our local rate of SLR (3.5 mm/yr).__  
+
+__H0:__ rate >= 3.5  
+__Ha:__ rate < 3.5  
+
+Keep in mind: n = 3 for each site. There has been no adjustment for multiple comparisons.
+
+```{r}
+models <- marker_rates_inc_SETsumm %>%
+    group_by(site) %>%  
+    do(mod = t.test(.$mean_inc_rate, mu=3.5, alternative="less"))
+
+modelcoef <- tidy(models, mod, conf.int=FALSE) %>%
+    select(site, estimate, statistic, p.value, method, alternative)
+
+kable(modelcoef, digits = c(4,2,3,4,4,4), align='c', caption = "t-test results for incremental accretion rates by site, as compared to local SLR rate of 3.5 mm/yr")
+```
+
+
+#### Annualized Accretion Rates  
+
+__t-tests comparing each site's rate of accretion to our local rate of SLR (3.5 mm/yr).__  
+
+__H0:__ rate >= 3.5  
+__Ha:__ rate < 3.5  
+
+Keep in mind: n = 3 for each site. There has been no adjustment for multiple comparisons.
+
+```{r}
+models <- rates_mh_overall_setsumm %>%
+    group_by(site) %>%  
+    do(mod = t.test(.$overall_mean, mu=3.5, alternative="less"))
+
+modelcoef <- tidy(models, mod, conf.int=FALSE) %>%
+    select(site, estimate, statistic, p.value, method, alternative)
+
+kable(modelcoef, digits = c(4,2,3,4,4,4), align='c', caption = "t-test results for annualized accretion rates by site, as compared to local SLR rate of 3.5 mm/yr")
+```
+
+***
+***
+***
+***
 
 
 Graphics  
