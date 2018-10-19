@@ -196,7 +196,7 @@ kable(rates_elev_site,
 
 ### Accretion (Marker Horizons)  
 
-__JURO-HIGH-1 EXCLUDED FROM ALL MH ANALYSES__  - there was only ~1 readable core per year in 2 of the 3 MH plots, and the numbers were crazy.
+__JURO-HIGH-1 EXCLUDED FROM ALL MH ANALYSES__  - there was only ~1 readable core per year in 2 of the 3 MH plots, and the numbers were crazy.  
 
 
 __change__ is mm    
@@ -267,7 +267,7 @@ marker_rates_inc_SETsumm <- marker_rates_inc_plotsumm %>%
               ci_95_inc_rate = paste0(round((mean_inc_rate - 1.96*se_inc_rate), 3), ", ", round((mean_inc_rate + 1.96*se_inc_rate), 3))) %>%
     ungroup()
 
-kable(marker_rates_inc_SETsumm,
+kable(marker_rates_inc_SETsumm[ , c('site', 'SET', 'mean_inc_rate', 'se_inc_rate', 'ci_95_inc_rate')],
       digits = 3,
       align = 'c',
       caption = 'Incremental Accretion Change by SET')
@@ -291,7 +291,7 @@ marker_rates_inc_sitesumm <- marker_rates_inc_SETsumm %>%
               ci_95_inc_rate = paste0(round((mean_inc_rate - 1.96*se_inc_rate), 3), ", ", round((mean_inc_rate + 1.96*se_inc_rate), 3))) %>%
     ungroup()
 
-kable(marker_rates_inc_sitesumm,
+kable(marker_rates_inc_sitesumm[ , c('site', 'mean_inc_rate', 'se_inc_rate', 'ci_95_inc_rate')],
       digits = 3,
       align = 'c',
       caption = 'Incremental Accretion Change by Site')
@@ -452,11 +452,10 @@ rates_mh_annual_2016 <- modelcoef %>%
            year = '2016') %>%
     select(year, site, SET, MHplot, rate_mm.yr, se_mm.yr, CIlow_mm.yr, CIhigh_mm.yr)
 
-# Bind them all together and get rid of the individual files   
-
-
+# Bind them all together  
 rates_mh_annual_all <- bind_rows(rates_mh_annual_2012, rates_mh_annual_2013, rates_mh_annual_2014, rates_mh_annual_2015, rates_mh_annual_2016)
 
+# clean up the workspace
 rm(marker_rates_2012, marker_rates_2013, marker_rates_2014, marker_rates_2015, marker_rates_2016, rates_mh_annual_2012, rates_mh_annual_2013, rates_mh_annual_2014, rates_mh_annual_2015, rates_mh_annual_2016)
 ```
 
@@ -469,7 +468,7 @@ rates_mh_annual_wide <- rates_mh_annual_all %>%
     spread(key = year, value = rate_mm.yr)
 # this should introduce some NAs when values weren't calculated for a year
 
-# rates_mh_annual_wide
+rates_mh_annual_wide
 ```
 
 
@@ -478,12 +477,21 @@ rates_mh_annual_wide <- rates_mh_annual_all %>%
 View annual rates by SET - first got annual averages by MHplot, then averaged those three numbers together 
 
 ```{r}
-# rates_mh_annual_setsumm <- rates_mh_annual_wide %>%
-#     gather(key = year, value = plotmean, -site, -SET, -MHplot) %>%
-#     group_by(site, SET, year) %>%
-#     summarize(setmean = mean(plotmean, na.rm = TRUE)) %>%
-#     spread(key = year, value = setmean)
-# kable(rates_mh_annual_setsumm, align = 'c', digits = 3, caption = "Mean annual (fall to fall) accretion rates, mm/yr, by SET")
+rates_mh_annual_setsumm <- rates_mh_annual_wide %>%
+    rename(yr2012 = '2012',
+           yr2013 = '2013',
+           yr2014 = '2014',
+           yr2015 = '2015',
+           yr2016 = '2016') %>%
+    ungroup() %>%
+    group_by(site, SET) %>%
+    summarize(mean2012 = mean(yr2012, na.rm = TRUE),
+              mean2013 = mean(yr2013, na.rm = TRUE),
+              mean2014 = mean(yr2014, na.rm = TRUE),
+              mean2015 = mean(yr2015, na.rm = TRUE),
+              mean2016 = mean(yr2016, na.rm = TRUE))
+
+kable(rates_mh_annual_setsumm, align = 'c', digits = 3, caption = "Mean annual (fall to fall) accretion rates, mm/yr, by SET")
 ```
 
 
