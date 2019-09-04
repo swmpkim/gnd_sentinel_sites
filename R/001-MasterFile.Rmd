@@ -1,5 +1,5 @@
 ---
-date: "August 29, 2018"
+date: "September 4, 2019"
 output:
   html_document:
     code_folding: hide
@@ -502,7 +502,7 @@ rates_mh_annual_plotsumm <- rates_mh_annual_wide %>%
     gather(key = year, value = value, -site, -SET, -MHplot) %>%
     group_by(site, SET, MHplot) %>%
     summarize(plotmean = mean(value, na.rm = TRUE))
-# kable(rates_mh_annual_plotsumm, align = 'c', digits = 3)
+kable(rates_mh_annual_plotsumm, align = 'c', digits = 3)
 ```
 
 #### By SET - annualized, overall mean of MHplot rates  
@@ -511,11 +511,33 @@ rates_mh_annual_plotsumm <- rates_mh_annual_wide %>%
 rates_mh_overall_setsumm <- rates_mh_annual_plotsumm %>%
     ungroup() %>%
     group_by(site, SET) %>%
-    summarize(overall_mean = mean(plotmean, na.rm = TRUE))
+    summarize(mean_annualized = mean(plotmean, na.rm = TRUE),
+              se_annualized = sd(plotmean, na.rm = TRUE)/sqrt(length(plotmean)),
+              ci_95_annualized = paste0(round((mean_annualized - 1.96*se_annualized), 3), ", ", round((mean_annualized + 1.96*se_annualized), 3)))
 kable(rates_mh_overall_setsumm, align = 'c', digits = 3, caption = "average annualized rate of accretion by SET")
 ```
 
 
+#### By site, annualized  
+
+Average of 3 SETs per site. CIs calculated as  $\bar{x} \pm 1.96(st.err)$.  
+
+```{r}
+rates_accr_site <- rates_mh_overall_setsumm %>%
+    group_by(site) %>%
+    rename(rates = mean_annualized) %>%
+    summarize(rate = mean(rates, na.rm = TRUE),
+              sd_rate = sd(rates, na.rm = TRUE),
+              se_rate = sd_rate / sqrt(length(SET)),
+              CI_low = rate - 1.96*se_rate,
+              CI_high = rate + 1.96*se_rate) %>%
+    ungroup() 
+
+kable(rates_accr_site, 
+      align = 'c', 
+      digits = 3,
+      caption = "Mean and standard deviation of accretion in mm per year by site")
+```
  
 
 
@@ -692,7 +714,7 @@ print(pinhsdplot)
 ##### ANOVA  
 
 ```{r}
-fit <- aov(overall_mean ~ site, data = rates_mh_overall_setsumm)
+fit <- aov(mean_annualized ~ site, data = rates_mh_overall_setsumm)
 anova(fit)
 ```
 
@@ -823,7 +845,7 @@ Keep in mind: n = 3 for each site. There has been no adjustment for multiple com
 ```{r}
 models <- rates_mh_overall_setsumm %>%
     group_by(site) %>%  
-    do(mod = t.test(.$overall_mean, mu=3.5, alternative="less"))
+    do(mod = t.test(.$mean_annualized, mu=3.5, alternative="less"))
 
 modelcoef <- tidy(models, mod, conf.int=FALSE) %>%
     select(site, estimate, statistic, p.value, method, alternative)
