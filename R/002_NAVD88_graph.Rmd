@@ -2,7 +2,11 @@
 title: "NAVD88 figure"
 author: "Kim Cressman"
 date: "9/23/2019"
-output: html_document
+output: 
+    html_document:
+        fig_width: 5.4
+        fig_height: 8
+        code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
@@ -291,33 +295,7 @@ ggplot(sets_navd88_mean, aes(x=date, y=elevation_mean)) +
 
 # Black/White/Gray Version  
 
-```{r}
-ggplot(sets_navd88_mean, aes(x=date, y=elevation_mean)) +
-    geom_ribbon(aes(ymin=ymin, 
-                    ymax=slr_slope*as.integer(date) + mlw_int), 
-                fill="gray40") +
-    geom_ribbon(aes(ymin=slr_slope*as.integer(date) + mlw_int,
-                    ymax=slr_slope*as.integer(date) + slr_int), 
-                fill="gray60", 
-                alpha=0.5) +
-    geom_ribbon(aes(ymin=slr_slope*as.integer(date) + slr_int,
-                    ymax=slr_slope*as.integer(date) + mhw_int), 
-                fill="gray90", 
-                alpha=0.5) +
-    geom_abline(aes(slope = slr_slope, intercept = slr_int), col="black", lty=2, size = 1) +
-    geom_abline(aes(slope = slr_slope, intercept = mhw_int), col="black", lty=2, size = 1) +
-    geom_abline(aes(slope = slr_slope, intercept = mlw_int), col="black", lty=2, size = 1) +
-    geom_point(aes(shape = Site), color = "gray30", alpha=0.6, size=2.5) +
-    geom_smooth(method="lm", se = FALSE, aes(group=Site), color = "gray20", size = 1) +
-    scale_color_brewer(palette = "Set1") +
-    geom_text(aes(x = as.Date("2017-04-01"), y = 0.31, label = "MHW")) +
-    geom_text(aes(x = as.Date("2017-04-01"), y = 0.09, label = "MSL")) +
-    geom_text(aes(x = as.Date("2017-04-01"), y = -0.11, label = "MLW")) +
-    theme_minimal() +
-    labs(x = "Date",
-         y = "Elevation (m, NAVD88)") +
-    ylim(ymin,0.9)
-```
+with slightly smaller y-limits  
 
 ```{r}
 ggplot(sets_navd88_mean, aes(x=date, y=elevation_mean)) +
